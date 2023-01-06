@@ -9,6 +9,7 @@ using SFML.Graphics;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using NetTopologySuite.Geometries;
 
 namespace SfmlIsoGeometryVisualizer
 {
@@ -25,6 +26,8 @@ namespace SfmlIsoGeometryVisualizer
 
         public bool ShouldShow { get => _shouldShow; set => _shouldShow = value; }
 
+        private bool _sizeHasChanged = true;
+
         // private List<>;
 
         private VertexArray? _pointVertexArray;
@@ -32,6 +35,11 @@ namespace SfmlIsoGeometryVisualizer
 
         private VertexArray? _lineArray;
         public VertexArray LineArray { get => _lineArray ?? throw new InvalidOperationException("We are not initialized!"); }
+
+        private View? _mainView;
+        private View MainView { get => _mainView ?? throw new InvalidOperationException("We are not initialized!"); }
+
+        private Geometry? _displayingGeometry;
 
         public SfmlGeometryWindow()
         {
@@ -73,10 +81,44 @@ namespace SfmlIsoGeometryVisualizer
             }
         }
 
+        private void HandleSizeChanged()
+        {
+            if (_displayingGeometry is null) return;
+
+            var env = _displayingGeometry.EnvelopeInternal;
+
+            var envCenter = env.Centre;
+
+            var geoExpandedSize = new Vector2f((float)(env.Width * 1.2), (float)(env.Height * 1.2));
+
+            var geoRatio = geoExpandedSize.X / geoExpandedSize.Y;
+
+            var windowRatio = ((float)Window.Size.X) / ((float)Window.Size.Y);
+
+            if (windowRatio > geoRatio)
+            {
+                // window is wider than geometry
+                // so use the heights, and keep the aspect ratio 
+
+                MainView.Size = new Vector2f(geoExpandedSize.Y * windowRatio, geoExpandedSize.Y);
+            }
+            else
+            {
+                // geometry is wider than window 
+                // so use the width, and keep the aspect ratio for height 
+                MainView.Size = new Vector2f(geoExpandedSize.X, geoExpandedSize.X / windowRatio);
+            }
+            MainView.Center = new Vector2f((float)envCenter.X, -(float)envCenter.Y);
+        }
+
         private void HandleGeometryChange(NetTopologySuite.Geometries.Geometry geometry)
         {
+            _displayingGeometry = geometry;
 
-            switch(geometry.OgcGeometryType)
+            HandleSizeChanged();
+
+
+            switch (geometry.OgcGeometryType)
             {
                 case NetTopologySuite.Geometries.OgcGeometryType.Polygon:
                     {
@@ -119,7 +161,7 @@ namespace SfmlIsoGeometryVisualizer
             _renderWindow.SetVerticalSyncEnabled(true);
 
             _renderWindow.Closed += (a, b) => { ((RenderWindow?)a)?.Close(); Environment.Exit(0); };
-            _renderWindow.Resized += (a, b) => { _shouldShow = true; };
+            _renderWindow.Resized += (a, b) => { _shouldShow = true; _sizeHasChanged = true; };
             // TODO: Handle other events here 
 
             //CircleShape cs = new CircleShape();
@@ -139,7 +181,7 @@ namespace SfmlIsoGeometryVisualizer
 
             _lineArray = new VertexArray(PrimitiveType.Lines);
 
-            View mainView = new View();
+            _mainView = new View();
 
             Stopwatch renderTimer = new Stopwatch();
             renderTimer.Start();
@@ -168,14 +210,18 @@ namespace SfmlIsoGeometryVisualizer
 
                     _renderWindow.Clear();
 
+                    if (_sizeHasChanged)
+                    {
+                        _sizeHasChanged = false;
+                        HandleSizeChanged();
+                    }
+
+
                     // TODO: Draw the geometry here 
 
                     Vector2f centerPoint = new Vector2f(0f, 0f);
 
-                    mainView.Center = centerPoint;
-                    mainView.Size = new Vector2f(_renderWindow.Size.X, _renderWindow.Size.Y);
-
-                    _renderWindow.SetView(mainView);
+                    _renderWindow.SetView(_mainView);
 
                     rs.Position = new Vector2f(2 - _renderWindow.Size.X / 2f, 2 - _renderWindow.Size.Y / 2f);
                     rs.Size = new Vector2f(_renderWindow.Size.X - 4f, _renderWindow.Size.Y - 4f);
